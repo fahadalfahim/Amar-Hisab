@@ -237,6 +237,11 @@ button:not(:disabled):active { transform: translateY(2px) scale(.985); }
 .form-stack input,.form-stack select,.form-stack textarea,.extended-filters select {
   background:var(--panel-soft); border:1.5px solid var(--clay-edge); border-radius:14px; box-shadow:var(--clay-inset); padding:12px 14px; color:var(--text); font-size:13px;
 }
+.form-stack select {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
 .form-stack input:focus,.form-stack select:focus,.form-stack textarea:focus { box-shadow:var(--clay-inset), 0 0 0 3px #9283e74d; border-color:var(--clay-focus); }
 .filter-toolbar { gap:10px; }
 .filter-tabs { padding:5px; }

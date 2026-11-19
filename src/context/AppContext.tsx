@@ -6,7 +6,7 @@ import { toPaisa, validatePayment } from '../lib/money';
 import { parseDhakaInput } from '../lib/dates';
 
 type AddTransactionInput = { kind: 'income' | 'expense'; amount: number; accountId: string; categoryId: string; date: string; description: string; notes?: string; idempotencyKey: string };
-type AddDebtInput = { contactName: string; phone?: string; direction: DebtDirection; amount: number; accountId: string; date: string; dueDate?: string; notes?: string; idempotencyKey: string };
+type AddDebtInput = { contactName: string; phone?: string; direction: DebtDirection; amount: number; accountId?: string; date: string; dueDate?: string; notes?: string; idempotencyKey: string };
 type AddPaymentInput = { debtId: string; accountId: string; amount: number; date: string; note?: string; idempotencyKey: string };
 
 interface AppContextValue {
@@ -285,11 +285,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (contactError) throw contactError;
         contactId = created.id;
       }
-      const { error } = await supabase.rpc('create_debt_record', {
+      let { error } = await supabase.rpc('create_debt_record', {
         p_contact_id: contactId, p_direction: input.direction, p_principal_paisa: amount,
-        p_account_id: input.accountId, p_opened_at: parseDhakaInput(input.date),
+        p_account_id: input.accountId || null, p_opened_at: parseDhakaInput(input.date),
         p_due_date: input.dueDate || null, p_notes: input.notes || null, p_idempotency_key: input.idempotencyKey
       });
+      // Fallback: if database strictly requires an account (legacy schema before migration 004) and none was chosen,
+      // gracefully associate with the active account so user action succeeds.
+      if (error && !input.accountId && data.accounts.length > 0) {
+        const fallbackId = data.accounts.find((a: Account) => !a.archived_at)?.id || data.accounts[0]?.id;
+        if (fallbackId) {
+          const retry = await supabase.rpc('create_debt_record', {
+            p_contact_id: contactId, p_direction: input.direction, p_principal_paisa: amount,
+            p_account_id: fallbackId, p_opened_at: parseDhakaInput(input.date),
+            p_due_date: input.dueDate || null, p_notes: input.notes || null, p_idempotency_key: input.idempotencyKey
+          });
+          error = retry.error;
+        }
+      }
       if (error) throw error;
       await refresh();
     }
@@ -303,8 +316,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (!debt) throw new Error('Debt record not found');
     validatePayment(amount, debt.remaining_paisa);
     if (supabase && session) {
+      const targetAccountId = input.accountId || data.accounts.find((a: Account) => !a.archived_at)?.id || data.accounts[0]?.id;
       const { error } = await supabase.rpc('record_debt_payment', {
-        p_debt_id: input.debtId, p_account_id: input.accountId,
+        p_debt_id: input.debtId, p_account_id: targetAccountId,
         p_amount_paisa: amount, p_paid_at: parseDhakaInput(input.date), p_note: input.note || null, p_idempotency_key: input.idempotencyKey
       });
       if (error) throw error;
