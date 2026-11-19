@@ -292,30 +292,51 @@ alter table public.debt_payments enable row level security;
 alter table public.notifications enable row level security;
 alter table public.audit_logs enable row level security;
 
+drop policy if exists profiles_select_own on public.profiles;
 create policy profiles_select_own on public.profiles for select to authenticated using (id = (select auth.uid()));
+drop policy if exists profiles_update_own on public.profiles;
 create policy profiles_update_own on public.profiles for update to authenticated using (id = (select auth.uid())) with check (id = (select auth.uid()));
 
+drop policy if exists accounts_select_own on public.accounts;
 create policy accounts_select_own on public.accounts for select to authenticated using (user_id = (select auth.uid()));
+drop policy if exists accounts_insert_own on public.accounts;
 create policy accounts_insert_own on public.accounts for insert to authenticated with check (user_id = (select auth.uid()));
+drop policy if exists accounts_update_own on public.accounts;
 create policy accounts_update_own on public.accounts for update to authenticated using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
+drop policy if exists accounts_delete_own on public.accounts;
 create policy accounts_delete_own on public.accounts for delete to authenticated using (user_id = (select auth.uid()));
 
+drop policy if exists categories_select_own on public.categories;
 create policy categories_select_own on public.categories for select to authenticated using (user_id = (select auth.uid()));
+drop policy if exists categories_insert_own on public.categories;
 create policy categories_insert_own on public.categories for insert to authenticated with check (user_id = (select auth.uid()));
+drop policy if exists categories_update_own on public.categories;
 create policy categories_update_own on public.categories for update to authenticated using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
+drop policy if exists categories_delete_own on public.categories;
 create policy categories_delete_own on public.categories for delete to authenticated using (user_id = (select auth.uid()) and is_system = false);
 
+drop policy if exists contacts_select_own on public.contacts;
 create policy contacts_select_own on public.contacts for select to authenticated using (user_id = (select auth.uid()));
+drop policy if exists contacts_insert_own on public.contacts;
 create policy contacts_insert_own on public.contacts for insert to authenticated with check (user_id = (select auth.uid()));
+drop policy if exists contacts_update_own on public.contacts;
 create policy contacts_update_own on public.contacts for update to authenticated using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
+drop policy if exists contacts_delete_own on public.contacts;
 create policy contacts_delete_own on public.contacts for delete to authenticated using (user_id = (select auth.uid()));
 
+drop policy if exists transactions_select_own on public.transactions;
 create policy transactions_select_own on public.transactions for select to authenticated using (user_id = (select auth.uid()));
+drop policy if exists ledger_select_own on public.ledger_entries;
 create policy ledger_select_own on public.ledger_entries for select to authenticated using (user_id = (select auth.uid()));
+drop policy if exists debts_select_own on public.debts;
 create policy debts_select_own on public.debts for select to authenticated using (user_id = (select auth.uid()));
+drop policy if exists debt_payments_select_own on public.debt_payments;
 create policy debt_payments_select_own on public.debt_payments for select to authenticated using (user_id = (select auth.uid()));
+drop policy if exists notifications_select_own on public.notifications;
 create policy notifications_select_own on public.notifications for select to authenticated using (user_id = (select auth.uid()));
+drop policy if exists notifications_update_own on public.notifications;
 create policy notifications_update_own on public.notifications for update to authenticated using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
+drop policy if exists audit_logs_select_own on public.audit_logs;
 create policy audit_logs_select_own on public.audit_logs for select to authenticated using (user_id = (select auth.uid()));
 
 -- Do not grant direct financial writes. Financial movements must use atomic RPCs.
