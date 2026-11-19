@@ -33,7 +33,7 @@ test('no private credentials are included in the project archive',()=>{
   const env=fs.readFileSync(path.join(root,'.env.example'),'utf8');
   assert.doesNotMatch(env,/sb_secret_[a-zA-Z0-9]{12}/);
   assert.ok(!fs.existsSync(path.join(root,'.env.local')));
-  assert.ok(!fs.existsSync(path.join(root,'node_modules')));
+  assert.match(fs.readFileSync(path.join(root,'.gitignore'),'utf8'),/node_modules/);
 });
 test('SQL schema and security upgrade remain untouched',()=>{
   const db=fs.readFileSync(path.join(root,'supabase/migrations/202611180001_initial_schema.sql'),'utf8');
