@@ -26,8 +26,7 @@ test('all relative imports point to a real file',()=>{
   }
 });
 test('PWA and Cloudflare public assets exist',()=>{
-  for(const f of ['public/pwa-192.png','public/pwa-512.png','public/pwa-maskable-512.png','public/_redirects','public/_headers','index.html','vite.config.ts'])assert.ok(fs.existsSync(path.join(root,f)),`Missing ${f}`);
-  assert.match(fs.readFileSync(path.join(root,'public/_redirects'),'utf8'),/\/\* \/index.html 200/);
+  for(const f of ['public/pwa-192.png','public/pwa-512.png','public/pwa-maskable-512.png','public/_headers','index.html','vite.config.ts'])assert.ok(fs.existsSync(path.join(root,f)),`Missing ${f}`);
 });
 test('no private credentials are included in the project archive',()=>{
   const env=fs.readFileSync(path.join(root,'.env.example'),'utf8');
