@@ -6,7 +6,7 @@ import {
   LogOut, Menu, Moon, MoreHorizontal, Plus, Search, Settings, ShieldCheck, Sparkles, Sun,
   TrendingDown, TrendingUp, UserRound, Users, Wallet, X, PieChart as PieIcon, Receipt,
   Utensils, Car, ShoppingBag, HeartPulse, Banknote, Smartphone, CircleDollarSign, Copy, Edit3, Archive, RotateCcw, ListFilter,
-  CheckCircle2, Trash2, PartyPopper, AlertCircle
+  CheckCircle2, Trash2, PartyPopper, AlertCircle, Scale, Percent, PiggyBank, BadgePercent
 } from 'lucide-react';
 import {
   Area, AreaChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip,
@@ -284,27 +284,491 @@ function StatCard({label,value,icon:Icon,tone,change,small}:{label:string;value:
 }
 
 function Dashboard({data,balance,income,expenses,payable,receivable,netWorth,language,onNavigate,onAdd,onPayment}:{data:any;balance:number;income:number;expenses:number;payable:number;receivable:number;netWorth:number;language:Language;onNavigate:(p:Page)=>void;onAdd:()=>void;onPayment:(d:Debt)=>void}) {
+  const [duesTab, setDuesTab] = useState<'owe'|'receivable'|'comparison'>('owe');
   const month = new Intl.DateTimeFormat(language==='bn'?'bn-BD':'en-BD',{month:'long',year:'numeric',timeZone:'Asia/Dhaka'}).format(new Date());
+
   const chartData = useMemo(()=>{ const current=dhakaYearMonth(); return Array.from({length:6},(_,i)=>{
     const d = new Date(Date.UTC(current.year,current.month-5+i,15,12));
     const parts=dhakaYearMonth(d);
     const s = summarizeMonth(data.transactions,parts.year,parts.month);
     return { month:new Intl.DateTimeFormat(language==='bn'?'bn-BD':'en-US',{month:'short',timeZone:'Asia/Dhaka'}).format(d), income:s.income/100, expense:s.expenses/100 };
   }); },[data.transactions,language]);
+
   const expenseByCategory = useMemo(()=>{
     const map = new Map<string,number>();
     data.transactions.filter((tx:Transaction)=>tx.kind==='expense'&&(()=>{const dt=dhakaYearMonth(new Date(tx.occurred_at));const n=dhakaYearMonth();return dt.year===n.year&&dt.month===n.month})()).forEach((tx:Transaction)=>map.set(tx.category_name||'Other',(map.get(tx.category_name||'Other')||0)+tx.amount_paisa));
     return [...map.entries()].map(([name,value],i)=>({name,value:value/100,color:['#7668f6','#26b58e','#f1ad56','#ee718c','#4c9de8','#9c7be8'][i%6]}));
   },[data.transactions]);
+
   const recent = data.transactions.slice(0,5) as Transaction[];
   const upcoming = data.debts.filter((d:Debt)=>d.remaining_paisa>0).sort((a:Debt,b:Debt)=>String(a.due_date||'9999').localeCompare(String(b.due_date||'9999'))).slice(0,3) as Debt[];
+
+  const duesAnalysis = useMemo(() => {
+    const iOweDebts = (data.debts as Debt[])
+      .filter((d: Debt) => d.direction === 'i_owe' && d.remaining_paisa > 0)
+      .sort((a: Debt, b: Debt) => b.remaining_paisa - a.remaining_paisa);
+
+    const theyOweDebts = (data.debts as Debt[])
+      .filter((d: Debt) => d.direction === 'they_owe' && d.remaining_paisa > 0)
+      .sort((a: Debt, b: Debt) => b.remaining_paisa - a.remaining_paisa);
+
+    const totalOwePaisa = iOweDebts.reduce((acc: number, d: Debt) => acc + d.remaining_paisa, 0);
+    const totalReceivablePaisa = theyOweDebts.reduce((acc: number, d: Debt) => acc + d.remaining_paisa, 0);
+
+    const oweByPersonMap = new Map<string, { contact_name: string; remaining_paisa: number; debts: Debt[]; due_date?: string | null }>();
+    for (const d of iOweDebts) {
+      const existing = oweByPersonMap.get(d.contact_name);
+      if (existing) {
+        existing.remaining_paisa += d.remaining_paisa;
+        existing.debts.push(d);
+        if (d.due_date && (!existing.due_date || d.due_date < existing.due_date)) existing.due_date = d.due_date;
+      } else {
+        oweByPersonMap.set(d.contact_name, { contact_name: d.contact_name, remaining_paisa: d.remaining_paisa, debts: [d], due_date: d.due_date });
+      }
+    }
+
+    const receivableByPersonMap = new Map<string, { contact_name: string; remaining_paisa: number; debts: Debt[]; due_date?: string | null }>();
+    for (const d of theyOweDebts) {
+      const existing = receivableByPersonMap.get(d.contact_name);
+      if (existing) {
+        existing.remaining_paisa += d.remaining_paisa;
+        existing.debts.push(d);
+        if (d.due_date && (!existing.due_date || d.due_date < existing.due_date)) existing.due_date = d.due_date;
+      } else {
+        receivableByPersonMap.set(d.contact_name, { contact_name: d.contact_name, remaining_paisa: d.remaining_paisa, debts: [d], due_date: d.due_date });
+      }
+    }
+
+    const oweColors = ['#f43f5e', '#e11d48', '#fb7185', '#be123c', '#f87171', '#9f1239'];
+    const receivableColors = ['#10b981', '#14b8a6', '#06b6d4', '#059669', '#34d399', '#0284c7'];
+
+    const oweList = Array.from(oweByPersonMap.values())
+      .sort((a, b) => b.remaining_paisa - a.remaining_paisa)
+      .map((item, idx) => ({
+        ...item,
+        color: oweColors[idx % oweColors.length],
+        ratio: totalOwePaisa > 0 ? Math.round((item.remaining_paisa / totalOwePaisa) * 100) : 0
+      }));
+
+    const receivableList = Array.from(receivableByPersonMap.values())
+      .sort((a, b) => b.remaining_paisa - a.remaining_paisa)
+      .map((item, idx) => ({
+        ...item,
+        color: receivableColors[idx % receivableColors.length],
+        ratio: totalReceivablePaisa > 0 ? Math.round((item.remaining_paisa / totalReceivablePaisa) * 100) : 0
+      }));
+
+    const combinedTotal = totalReceivablePaisa + totalOwePaisa;
+    const recComparePct = combinedTotal > 0 ? Math.round((totalReceivablePaisa / combinedTotal) * 100) : 50;
+    const oweComparePct = combinedTotal > 0 ? 100 - recComparePct : 50;
+
+    return { totalOwePaisa, totalReceivablePaisa, oweList, receivableList, recComparePct, oweComparePct };
+  }, [data.debts]);
+
+  const monthlyMetrics = useMemo(() => {
+    const inc = income;
+    const exp = expenses;
+    const net = inc - exp;
+    const isSurplus = net >= 0;
+
+    let expensePct = 0;
+    let savingsPct = 0;
+    if (inc > 0) {
+      expensePct = Math.min(100, Math.round((exp / inc) * 100));
+      savingsPct = Math.max(0, 100 - expensePct);
+    } else if (exp > 0) {
+      expensePct = 100;
+      savingsPct = 0;
+    }
+
+    return { inc, exp, net, isSurplus, expensePct, savingsPct };
+  }, [income, expenses]);
+
   return <div className="dashboard-page">
     <div className="welcome-row"><div><div className="welcome-date"><CalendarDays size={14}/>{month}</div><h2>{t(language,'welcome')}, <span>there.</span> <span className="wave">✦</span></h2><p>{t(language,'subtitle')}</p></div><button className="primary-btn" onClick={onAdd}><Plus size={17}/>{t(language,'addTransaction')}</button></div>
+    
     <div className="hero-balance-card"><div className="hero-glow glow-one"/><div className="hero-glow glow-two"/><div className="hero-balance-content"><div className="clay-hero-kicker"><Sparkles size={13}/> {language==='bn'?'আমার ফাইন্যান্স হাব':'MY FINANCE HUB'}</div><div className="hero-label"><span className="hero-dot"/> {t(language,'totalBalance')} <span className="hero-all">· All accounts</span></div><div className="hero-amount">{formatMoney(balance,language)}</div><div className="hero-meta"><span><ShieldCheck size={14}/> Updated just now</span><span className="hero-net">{t(language,'netWorth')}: {formatMoney(netWorth,language)}</span></div></div><div className="hero-art"><div className="hero-orbit orbit-a"/><div className="hero-orbit orbit-b"/><div className="hero-coin hero-coin-one">৳</div><div className="hero-coin hero-coin-two">✦</div><div className="hero-wallet"><Wallet size={36}/><div className="wallet-chip"/><div className="wallet-line"/></div><Sparkles className="hero-spark" size={22}/></div><div className="hero-bottom"><div><span>MONTHLY CASH FLOW</span><b>{formatMoney(income-expenses,language)}</b></div><div className="hero-mini-bar"><i style={{width:`${income+expenses===0?0:Math.min(100,income/(income+expenses)*100)}%`}}/></div><span className="hero-caption">{income>=expenses?'You are earning more than spending':'Your spending is higher this month'}</span></div></div>
+    
     <div className="stats-grid"><StatCard label={t(language,'income')} value={formatMoney(income,language)} icon={ArrowDownLeft} tone="green" change="Income" small="Received this month"/><StatCard label={t(language,'expenses')} value={formatMoney(expenses,language)} icon={ArrowUpRight} tone="rose" small="Spent this month"/><StatCard label={t(language,'receivable')} value={formatMoney(receivable,language)} icon={HandCoins} tone="blue" small="Outstanding amount"/><StatCard label={t(language,'payable')} value={formatMoney(payable,language)} icon={CreditCard} tone="amber" small="Outstanding amount"/></div>
-    <div className="dashboard-grid"><div className="panel cashflow-panel"><div className="panel-heading"><div><h3>{t(language,'cashFlow')}</h3><p>Income and expenses over the last 6 months</p></div><span className="period-pill">Last 6 months <ChevronDown size={13}/></span></div><div className="chart-legend"><span><i className="legend-dot income-dot"/>Income</span><span><i className="legend-dot expense-dot"/>Expenses</span></div><div className="chart-wrap"><ResponsiveContainer width="100%" height="100%"><AreaChart data={chartData} margin={{top:10,right:8,left:-18,bottom:0}}><defs><linearGradient id="incomeFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#28b98d" stopOpacity={.2}/><stop offset="100%" stopColor="#28b98d" stopOpacity={0}/></linearGradient><linearGradient id="expenseFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#ef7892" stopOpacity={.18}/><stop offset="100%" stopColor="#ef7892" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 5" vertical={false} stroke="var(--line)"/><XAxis dataKey="month" tickLine={false} axisLine={false} tick={{fill:'var(--muted)',fontSize:11}}/><YAxis tickLine={false} axisLine={false} tick={{fill:'var(--muted)',fontSize:10}} tickFormatter={v=>`${v/1000}k`}/><Tooltip formatter={(v:any)=>formatMoney(Number(v)*100,language)} contentStyle={{background:'var(--panel)',border:'1px solid var(--line)',borderRadius:12,color:'var(--text)'}}/><Area type="monotone" dataKey="income" name="Income" stroke="#28b98d" strokeWidth={2.5} fill="url(#incomeFill)"/><Area type="monotone" dataKey="expense" name="Expenses" stroke="#ef7892" strokeWidth={2.5} fill="url(#expenseFill)"/></AreaChart></ResponsiveContainer></div></div>
-      <div className="panel spending-panel"><div className="panel-heading"><div><h3>{t(language,'spending')}</h3><p>Where your money goes</p></div><ActionMenu label="Spending chart menu" options={[{label:"View transactions",icon:ListFilter,onClick:()=>onNavigate('transactions')},{label:"View reports",icon:PieIcon,onClick:()=>onNavigate('reports')}]}/></div>{expenseByCategory.length? <><div className="donut-wrap"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={expenseByCategory} dataKey="value" nameKey="name" innerRadius={58} outerRadius={82} paddingAngle={4} stroke="none">{expenseByCategory.map((entry:any,index:number)=><Cell key={index} fill={entry.color}/>)}</Pie><Tooltip formatter={(v:any)=>formatMoney(Number(v)*100,language)} contentStyle={{background:'var(--panel)',border:'1px solid var(--line)',borderRadius:12}}/></PieChart></ResponsiveContainer><div className="donut-center"><b>{formatMoney(expenses,language)}</b><span>Total spent</span></div></div><div className="category-legend">{expenseByCategory.slice(0,4).map((c:any)=><div key={c.name}><span><i style={{background:c.color}}/>{c.name}</span><b>{formatMoney(c.value*100,language)}</b></div>)}</div></>:<EmptyState text={t(language,'noData')}/>}</div></div>
-    <div className="dashboard-grid lower-grid"><div className="panel recent-panel"><div className="panel-heading"><div><h3>{t(language,'recent')}</h3><p>Your latest money movements</p></div><button className="text-link" onClick={()=>onNavigate('transactions')}>{t(language,'seeAll')} <ArrowUpRight size={14}/></button></div><TransactionTable transactions={recent} language={language}/></div><div className="panel upcoming-panel"><div className="panel-heading"><div><h3>{t(language,'upcoming')}</h3><p>Keep your commitments on track</p></div><button className="icon-btn subtle" title="Open due payments" onClick={()=>onNavigate('loans')}><CalendarDays size={17}/></button></div>{upcoming.length?upcoming.map((d:Debt)=><div className="upcoming-item" key={d.id}><div className="upcoming-date"><b>{d.due_date?new Date(`${d.due_date?.slice(0,10)}T12:00:00+06:00`).getUTCDate():'—'}</b><span>{d.due_date?new Date(`${d.due_date?.slice(0,10)}T12:00:00+06:00`).toLocaleDateString(language==='bn'?'bn-BD':'en-US',{month:'short'}):'No date'}</span></div><div className="upcoming-info"><b>{d.contact_name}</b><span>{d.direction==='i_owe'?'You need to pay':'Expected from them'}</span></div><div className="upcoming-amount"><b>{formatMoney(d.remaining_paisa,language)}</b><button onClick={()=>onPayment(d)}>Update</button></div></div>):<EmptyState text="No upcoming payments"/>}</div></div>
+
+    {/* Section 1: Monthly Ratio & Financial Health Breakdown */}
+    <div className="monthly-ratio-panel">
+      <div className="ratio-panel-top">
+        <div>
+          <h3><BadgePercent size={19} color="#7065f0"/> {language==='bn'?'চলতি মাসের আর্থিক অনুপাত ও হিসাব':'Monthly Financial Ratio & Overview'}</h3>
+          <p style={{fontSize:'11px',color:'var(--muted)',margin:'2px 0 0 0'}}>{language==='bn'?'আয়, ব্যয় এবং সঞ্চয়ের নিখুঁত শতকরা হার এক নজরে':'Live percentage breakdown of your income, expenses and savings'}</p>
+        </div>
+        <div className="ratio-metric-pills">
+          <span className="ratio-metric-pill income"><ArrowDownLeft size={13}/> {language==='bn'?'আয়:':'Income:'} {formatMoney(monthlyMetrics.inc, language)}</span>
+          <span className="ratio-metric-pill expense"><ArrowUpRight size={13}/> {language==='bn'?'ব্যয়:':'Expense:'} {formatMoney(monthlyMetrics.exp, language)}</span>
+          <span className="ratio-metric-pill net"><PiggyBank size={13}/> {language==='bn'?'উদ্বৃত্ত:':'Net:'} {monthlyMetrics.isSurplus?'+':''}{formatMoney(monthlyMetrics.net, language)}</span>
+        </div>
+      </div>
+
+      <div className="animated-ratio-bar">
+        {monthlyMetrics.expensePct > 0 && (
+          <div className="ratio-bar-segment expense" style={{width: `${monthlyMetrics.expensePct}%`}} title={`Expenses: ${monthlyMetrics.expensePct}%`}/>
+        )}
+        {monthlyMetrics.savingsPct > 0 && (
+          <div className="ratio-bar-segment savings" style={{width: `${monthlyMetrics.savingsPct}%`}} title={`Savings: ${monthlyMetrics.savingsPct}%`}/>
+        )}
+      </div>
+
+      <div className="ratio-bar-legend">
+        <div style={{display:'flex',gap:'14px',alignItems:'center'}}>
+          <span className="ratio-legend-item"><i className="ratio-legend-dot" style={{background:'#f43f5e'}}/> {language==='bn'?`ব্যয়: ${monthlyMetrics.expensePct}%`:`Expense: ${monthlyMetrics.expensePct}%`}</span>
+          <span className="ratio-legend-item"><i className="ratio-legend-dot" style={{background:'#10b981'}}/> {language==='bn'?`সঞ্চয় / উদ্বৃত্ত: ${monthlyMetrics.savingsPct}%`:`Savings: ${monthlyMetrics.savingsPct}%`}</span>
+        </div>
+        <div>
+          {monthlyMetrics.inc === 0 && monthlyMetrics.exp === 0 ? (
+            <span style={{fontSize:'11px',color:'var(--muted)'}}>💡 {language==='bn'?'এ মাসে এখনও কোনো লেনদেন করা হয়নি':'No movements recorded this month yet'}</span>
+          ) : monthlyMetrics.isSurplus ? (
+            <span style={{fontSize:'11px',color:'#059669',fontWeight:700}}>🟢 {language==='bn'?`চমৎকার সঞ্চয়! আয়ের ${monthlyMetrics.savingsPct}% উদ্বৃত্ত রয়েছে`:`Great health! ${monthlyMetrics.savingsPct}% of income saved`}</span>
+          ) : (
+            <span style={{fontSize:'11px',color:'#dc2626',fontWeight:700}}>⚠️ {language==='bn'?`আয়ের চেয়ে ব্যয় বেশি হয়েছে (ঘাটতি)`:`Budget deficit! Spending exceeded income`}</span>
+          )}
+        </div>
+      </div>
+    </div>
+
+    {/* Section 2: Animated Visual Charts */}
+    <div className="dashboard-grid">
+      <div className="panel cashflow-panel">
+        <div className="panel-heading">
+          <div>
+            <h3>{t(language,'cashFlow')}</h3>
+            <p>Income and expenses over the last 6 months</p>
+          </div>
+          <span className="period-pill">Last 6 months <ChevronDown size={13}/></span>
+        </div>
+        <div className="chart-legend">
+          <span><i className="legend-dot income-dot"/>Income</span>
+          <span><i className="legend-dot expense-dot"/>Expenses</span>
+        </div>
+        <div className="chart-wrap">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={chartData} margin={{top:10,right:8,left:-18,bottom:0}}>
+              <defs>
+                <linearGradient id="incomeFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#28b98d" stopOpacity={.3}/>
+                  <stop offset="100%" stopColor="#28b98d" stopOpacity={0}/>
+                </linearGradient>
+                <linearGradient id="expenseFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#ef7892" stopOpacity={.25}/>
+                  <stop offset="100%" stopColor="#ef7892" stopOpacity={0}/>
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 5" vertical={false} stroke="var(--line)"/>
+              <XAxis dataKey="month" tickLine={false} axisLine={false} tick={{fill:'var(--muted)',fontSize:11}}/>
+              <YAxis tickLine={false} axisLine={false} tick={{fill:'var(--muted)',fontSize:10}} tickFormatter={v=>`${v/1000}k`}/>
+              <Tooltip formatter={(v:any)=>formatMoney(Number(v)*100,language)} contentStyle={{background:'var(--panel)',border:'1px solid var(--line)',borderRadius:12,color:'var(--text)',boxShadow:'0 10px 25px rgba(0,0,0,0.15)'}}/>
+              <Area type="monotone" dataKey="income" name="Income" stroke="#28b98d" strokeWidth={2.5} fill="url(#incomeFill)" isAnimationActive={true} animationDuration={1000}/>
+              <Area type="monotone" dataKey="expense" name="Expenses" stroke="#ef7892" strokeWidth={2.5} fill="url(#expenseFill)" isAnimationActive={true} animationDuration={1000}/>
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      <div className="panel spending-panel">
+        <div className="panel-heading">
+          <div>
+            <h3>{t(language,'spending')}</h3>
+            <p>Where your money goes</p>
+          </div>
+          <ActionMenu label="Spending chart menu" options={[{label:"View transactions",icon:ListFilter,onClick:()=>onNavigate('transactions')},{label:"View reports",icon:PieIcon,onClick:()=>onNavigate('reports')}]}/>
+        </div>
+        {expenseByCategory.length ? (
+          <>
+            <div className="donut-wrap">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={expenseByCategory} dataKey="value" nameKey="name" innerRadius={58} outerRadius={82} paddingAngle={4} stroke="none" isAnimationActive={true} animationDuration={900}>
+                    {expenseByCategory.map((entry:any,index:number)=><Cell key={index} fill={entry.color}/>)}
+                  </Pie>
+                  <Tooltip formatter={(v:any)=>formatMoney(Number(v)*100,language)} contentStyle={{background:'var(--panel)',border:'1px solid var(--line)',borderRadius:12,boxShadow:'0 10px 25px rgba(0,0,0,0.15)'}}/>
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="donut-center">
+                <b>{formatMoney(expenses,language)}</b>
+                <span>Total spent</span>
+              </div>
+            </div>
+            <div className="category-legend">
+              {expenseByCategory.slice(0,4).map((c:any)=>(
+                <div key={c.name}>
+                  <span><i style={{background:c.color}}/>{c.name}</span>
+                  <b>{formatMoney(c.value*100,language)}</b>
+                </div>
+              ))}
+            </div>
+          </>
+        ) : (
+          <EmptyState text={t(language,'noData')}/>
+        )}
+      </div>
+    </div>
+
+    {/* Section 3: Visual Dues & Receivables Ratio Hub (Where & How Much Due / Owed) */}
+    <div className="dues-ratio-hub">
+      <div className="dues-ratio-top">
+        <div>
+          <h3><Scale size={19} color="#e11d48"/> {language==='bn'?'ধার ও দেনার পূর্ণাঙ্গ অনুপাত হাব':'Dues & Receivables Ratio Hub'}</h3>
+          <p>{language==='bn'?'কার কাছে কত দেনা বাকি আছে এবং কার থেকে কত টাকা পাবেন—এক নজরে অনুপাত ও হিসাব':'Clear proportion of who you owe and who owes you at a glance'}</p>
+        </div>
+        <div className="dues-tabs-switcher">
+          <button type="button" className={duesTab==='owe'?'selected':''} onClick={()=>setDuesTab('owe')}>
+            <CreditCard size={14}/> {language==='bn'?`কাকে কত দিতে হবে (${duesAnalysis.oweList.length})`:`I Owe (${duesAnalysis.oweList.length})`}
+          </button>
+          <button type="button" className={duesTab==='receivable'?'selected':''} onClick={()=>setDuesTab('receivable')}>
+            <HandCoins size={14}/> {language==='bn'?`কার থেকে কত পাবেন (${duesAnalysis.receivableList.length})`:`They Owe (${duesAnalysis.receivableList.length})`}
+          </button>
+          <button type="button" className={duesTab==='comparison'?'selected':''} onClick={()=>setDuesTab('comparison')}>
+            <Scale size={14}/> {language==='bn'?'দেনা বনাম পাওনা অনুপাত':'Balance Ratio'}
+          </button>
+        </div>
+      </div>
+
+      {duesTab === 'owe' && (
+        <>
+          <div className="dues-banner-summary owe">
+            <span>{language==='bn'?'আপনার মোট দেনা (পরিশোধ করতে হবে):':'Total outstanding dues to pay:'} <strong>{formatMoney(duesAnalysis.totalOwePaisa, language)}</strong></span>
+            <span>{duesAnalysis.oweList.length} {language==='bn'?'জনের কাছে বাকি':'parties involved'}</span>
+          </div>
+
+          {duesAnalysis.oweList.length > 0 ? (
+            <>
+              {/* Segmented ratio bar */}
+              <div className="segmented-dues-bar">
+                {duesAnalysis.oweList.map((item, idx) => (
+                  <div key={idx} className="segmented-dues-chunk" style={{width: `${Math.max(4, item.ratio)}%`, background: item.color}} title={`${item.contact_name}: ${formatMoney(item.remaining_paisa, language)} (${item.ratio}%)`}/>
+                ))}
+              </div>
+
+              {/* Individual person cards */}
+              <div className="dues-breakdown-grid">
+                {duesAnalysis.oweList.map((item, idx) => (
+                  <div key={idx} className="due-breakdown-card">
+                    <div className="due-card-header">
+                      <div className="due-person-info">
+                        <div className="due-person-avatar" style={{background: item.color}}>
+                          {item.contact_name.slice(0, 1)}
+                        </div>
+                        <div className="due-person-name">
+                          <b>{item.contact_name}</b>
+                          <span>{language==='bn'?'ধার নেওয়া হয়েছে':'Borrowed'}</span>
+                        </div>
+                      </div>
+                      <span className="due-share-pill owe">
+                        <Percent size={11}/> {item.ratio}% {language==='bn'?'দেনা':'share'}
+                      </span>
+                    </div>
+
+                    <div className="due-card-amount-row">
+                      <div>
+                        <span>{language==='bn'?'বাকি টাকা':'Amount due'}</span>
+                        <strong className="due-red">{formatMoney(item.remaining_paisa, language)}</strong>
+                      </div>
+                    </div>
+
+                    <div className="due-progress-track">
+                      <div className="due-progress-fill" style={{width: `${item.ratio}%`, background: item.color}}/>
+                    </div>
+
+                    <div className="due-card-action-row">
+                      <small>
+                        <CalendarDays size={12}/>
+                        {item.due_date ? new Date(`${item.due_date.slice(0,10)}T12:00:00+06:00`).toLocaleDateString(language==='bn'?'bn-BD':'en-GB') : (language==='bn'?'কোনো নির্দিষ্ট তারিখ নেই':'No due date')}
+                      </small>
+                      <button type="button" className="primary-btn small" onClick={()=>onPayment(item.debts[0])}>
+                        <Plus size={13}/> {language==='bn'?'টাকা পরিশোধ করুন':'Repay'}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <div className="panel empty-panel" style={{margin:0,background:'var(--panel)'}}>
+              <div style={{textAlign:'center',padding:'25px 15px'}}>
+                <div style={{width:50,height:50,borderRadius:'50%',background:'#ecfdf5',color:'#10b981',display:'grid',placeItems:'center',margin:'0 auto 12px'}}>
+                  <CheckCircle2 size={28}/>
+                </div>
+                <b style={{fontSize:'15px',color:'#065f46',display:'block',marginBottom:4}}>{language==='bn'?'🎉 আলহামদুলিল্লাহ! কোনো বকেয়া দেনা নেই':'🎉 All clear! No outstanding debts'}</b>
+                <span style={{fontSize:'12px',color:'var(--muted)'}}>{language==='bn'?'আপনার সব ঋণ ও ধার পরিশোধ করা হয়েছে। আপনি সম্পূর্ণ দেনামুক্ত!':'You do not owe money to anyone at this moment.'}</span>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {duesTab === 'receivable' && (
+        <>
+          <div className="dues-banner-summary receivable">
+            <span>{language==='bn'?'আপনি পাবেন (পাওনা টাকা):':'Total money owed to you:'} <strong>{formatMoney(duesAnalysis.totalReceivablePaisa, language)}</strong></span>
+            <span>{duesAnalysis.receivableList.length} {language==='bn'?'জনের কাছে পাওনা':'parties owe you'}</span>
+          </div>
+
+          {duesAnalysis.receivableList.length > 0 ? (
+            <>
+              {/* Segmented ratio bar */}
+              <div className="segmented-dues-bar">
+                {duesAnalysis.receivableList.map((item, idx) => (
+                  <div key={idx} className="segmented-dues-chunk" style={{width: `${Math.max(4, item.ratio)}%`, background: item.color}} title={`${item.contact_name}: ${formatMoney(item.remaining_paisa, language)} (${item.ratio}%)`}/>
+                ))}
+              </div>
+
+              {/* Individual person cards */}
+              <div className="dues-breakdown-grid">
+                {duesAnalysis.receivableList.map((item, idx) => (
+                  <div key={idx} className="due-breakdown-card">
+                    <div className="due-card-header">
+                      <div className="due-person-info">
+                        <div className="due-person-avatar" style={{background: item.color}}>
+                          {item.contact_name.slice(0, 1)}
+                        </div>
+                        <div className="due-person-name">
+                          <b>{item.contact_name}</b>
+                          <span>{language==='bn'?'ধার দেওয়া হয়েছে':'Lent'}</span>
+                        </div>
+                      </div>
+                      <span className="due-share-pill receivable">
+                        <Percent size={11}/> {item.ratio}% {language==='bn'?'পাওনা':'share'}
+                      </span>
+                    </div>
+
+                    <div className="due-card-amount-row">
+                      <div>
+                        <span>{language==='bn'?'পাওনার পরিমাণ':'Expected return'}</span>
+                        <strong className="settled-green">{formatMoney(item.remaining_paisa, language)}</strong>
+                      </div>
+                    </div>
+
+                    <div className="due-progress-track">
+                      <div className="due-progress-fill" style={{width: `${item.ratio}%`, background: item.color}}/>
+                    </div>
+
+                    <div className="due-card-action-row">
+                      <small>
+                        <CalendarDays size={12}/>
+                        {item.due_date ? new Date(`${item.due_date.slice(0,10)}T12:00:00+06:00`).toLocaleDateString(language==='bn'?'bn-BD':'en-GB') : (language==='bn'?'কোনো নির্দিষ্ট তারিখ নেই':'No due date')}
+                      </small>
+                      <button type="button" className="secondary-btn small" onClick={()=>onPayment(item.debts[0])}>
+                        <Plus size={13}/> {language==='bn'?'টাকা গ্রহণ করুন':'Collect'}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <div className="panel empty-panel" style={{margin:0,background:'var(--panel)'}}>
+              <div style={{textAlign:'center',padding:'25px 15px'}}>
+                <div style={{width:50,height:50,borderRadius:'50%',background:'var(--panel-soft)',color:'var(--muted)',display:'grid',placeItems:'center',margin:'0 auto 12px'}}>
+                  <HandCoins size={28}/>
+                </div>
+                <b style={{fontSize:'14px',display:'block',marginBottom:4}}>{language==='bn'?'বর্তমানে কারো কাছে পাওনা টাকা নেই':'No receivables active'}</b>
+                <span style={{fontSize:'12px',color:'var(--muted)'}}>{language==='bn'?'কাউকে নতুন ধার দিলে সেটি এখানে স্বয়ংক্রিয়ভাবে অনুপাতসহ যোগ হবে।':'When you lend money to someone, their ratio will appear here automatically.'}</span>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {duesTab === 'comparison' && (
+        <div className="net-loan-comparison">
+          <div className="comparison-stats-row">
+            <div className="comparison-box">
+              <span>{language==='bn'?'মোট পাওনা (ফেরত পাবেন)':'Total Receivables (Owed to you)'}</span>
+              <strong style={{color:'#059669'}}>{formatMoney(duesAnalysis.totalReceivablePaisa, language)}</strong>
+              <small style={{fontSize:'11px',color:'var(--muted)'}}>{language==='bn'?`মোট ঋণ লেনদেনের ${duesAnalysis.recComparePct}%`:`${duesAnalysis.recComparePct}% of total loan flow`}</small>
+            </div>
+            <div className="comparison-box">
+              <span>{language==='bn'?'মোট দেনা (পরিশোধ করতে হবে)':'Total Outstanding Dues (You owe)'}</span>
+              <strong style={{color:'#dc2626'}}>{formatMoney(duesAnalysis.totalOwePaisa, language)}</strong>
+              <small style={{fontSize:'11px',color:'var(--muted)'}}>{language==='bn'?`মোট ঋণ লেনদেনের ${duesAnalysis.oweComparePct}%`:`${duesAnalysis.oweComparePct}% of total loan flow`}</small>
+            </div>
+          </div>
+
+          <div>
+            <div style={{display:'flex',justifyContent:'space-between',fontSize:'11px',marginBottom:6,fontWeight:700}}>
+              <span style={{color:'#059669'}}>{language==='bn'?`পাওনা: ${duesAnalysis.recComparePct}%`:`Receivable: ${duesAnalysis.recComparePct}%`}</span>
+              <span style={{color:'#dc2626'}}>{language==='bn'?`দেনা: ${duesAnalysis.oweComparePct}%`:`Dues: ${duesAnalysis.oweComparePct}%`}</span>
+            </div>
+            <div className="comparison-bar-wrap">
+              <div className="comparison-bar-rec" style={{width:`${duesAnalysis.recComparePct}%`}}/>
+              <div className="comparison-bar-pay" style={{width:`${duesAnalysis.oweComparePct}%`}}/>
+            </div>
+          </div>
+
+          <div>
+            {duesAnalysis.totalReceivablePaisa >= duesAnalysis.totalOwePaisa ? (
+              <div className="comparison-status-pill safe">
+                <CheckCircle2 size={16}/>
+                <span>
+                  {language==='bn'
+                    ? `সুরক্ষিত অবস্থান! আপনি দেনার চেয়ে ${formatMoney(duesAnalysis.totalReceivablePaisa - duesAnalysis.totalOwePaisa, language)} বেশি পাবেন।`
+                    : `Positive net position! You are owed ${formatMoney(duesAnalysis.totalReceivablePaisa - duesAnalysis.totalOwePaisa, language)} more than you owe.`}
+                </span>
+              </div>
+            ) : (
+              <div className="comparison-status-pill warning">
+                <AlertCircle size={16}/>
+                <span>
+                  {language==='bn'
+                    ? `সতর্কতা! আপনার পাওনার চেয়ে দেনা ${formatMoney(duesAnalysis.totalOwePaisa - duesAnalysis.totalReceivablePaisa, language)} বেশি। কিস্তি পরিশোধের পরিকল্পনা তৈরি করুন।`
+                    : `Heads up! Outstanding dues exceed receivables by ${formatMoney(duesAnalysis.totalOwePaisa - duesAnalysis.totalReceivablePaisa, language)}.`}
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+
+    {/* Section 4: Recent and Upcoming panels */}
+    <div className="dashboard-grid lower-grid">
+      <div className="panel recent-panel">
+        <div className="panel-heading">
+          <div>
+            <h3>{t(language,'recent')}</h3>
+            <p>Your latest money movements</p>
+          </div>
+          <button className="text-link" onClick={()=>onNavigate('transactions')}>
+            {t(language,'seeAll')} <ArrowUpRight size={14}/>
+          </button>
+        </div>
+        <TransactionTable transactions={recent} language={language}/>
+      </div>
+      <div className="panel upcoming-panel">
+        <div className="panel-heading">
+          <div>
+            <h3>{t(language,'upcoming')}</h3>
+            <p>Keep your commitments on track</p>
+          </div>
+          <button className="icon-btn subtle" title="Open due payments" onClick={()=>onNavigate('loans')}>
+            <CalendarDays size={17}/>
+          </button>
+        </div>
+        {upcoming.length ? upcoming.map((d:Debt)=>(
+          <div className="upcoming-item" key={d.id}>
+            <div className="upcoming-date">
+              <b>{d.due_date?new Date(`${d.due_date?.slice(0,10)}T12:00:00+06:00`).getUTCDate():'—'}</b>
+              <span>{d.due_date?new Date(`${d.due_date?.slice(0,10)}T12:00:00+06:00`).toLocaleDateString(language==='bn'?'bn-BD':'en-US',{month:'short'}):'No date'}</span>
+            </div>
+            <div className="upcoming-info">
+              <b>{d.contact_name}</b>
+              <span>{d.direction==='i_owe'?'You need to pay':'Expected from them'}</span>
+            </div>
+            <div className="upcoming-amount">
+              <b>{formatMoney(d.remaining_paisa,language)}</b>
+              <button onClick={()=>onPayment(d)}>Update</button>
+            </div>
+          </div>
+        )) : (
+          <EmptyState text="No upcoming payments"/>
+        )}
+      </div>
+    </div>
   </div>;
 }
 
