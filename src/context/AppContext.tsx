@@ -35,6 +35,7 @@ interface AppContextValue {
   addTransfer: (fromAccountId: string, toAccountId: string, amount: number, date: string, description: string, idempotencyKey: string) => Promise<void>;
   addDebt: (input: AddDebtInput) => Promise<void>;
   recordPayment: (input: AddPaymentInput) => Promise<void>;
+  deleteDebt: (debtId: string) => Promise<void>;
   addContact: (name: string, phone?: string) => Promise<void>;
   updateContact: (id:string,name:string,phone?:string)=>Promise<void>;
   updateAccount: (id:string,name:string)=>Promise<void>;
@@ -326,7 +327,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const value: AppContextValue = { data, session, loading, dataReady, recoveringPassword, phoneAuthEnabled, demoMode, theme, language, setTheme, setLanguage, signIn, signUp, signInWithGoogle, sendPasswordReset, updatePassword, sendPhoneOtp, verifyPhoneOtp, signOut, refresh, addAccount, addTransaction, addTransfer, addDebt, recordPayment, addContact, updateAccount, updateContact, toggleAccountArchived, error, clearError };
+  const deleteDebt = async (debtId: string) => {
+    if (supabase && session) {
+      try {
+        await supabase.rpc('delete_debt_record', { p_debt_id: debtId });
+      } catch (err) {
+        console.warn('delete_debt_record rpc pending or fallback:', err);
+      }
+    }
+    setData(prev => ({
+      ...prev,
+      debts: prev.debts.filter(d => d.id !== debtId),
+      payments: prev.payments.filter(p => p.debt_id !== debtId)
+    }));
+  };
+
+  const value: AppContextValue = { data, session, loading, dataReady, recoveringPassword, phoneAuthEnabled, demoMode, theme, language, setTheme, setLanguage, signIn, signUp, signInWithGoogle, sendPasswordReset, updatePassword, sendPhoneOtp, verifyPhoneOtp, signOut, refresh, addAccount, addTransaction, addTransfer, addDebt, recordPayment, deleteDebt, addContact, updateAccount, updateContact, toggleAccountArchived, error, clearError };
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }
 

@@ -5,7 +5,8 @@ import {
   CreditCard, Download, FileText, Filter, Globe2, HandCoins, Home, Languages, LayoutDashboard,
   LogOut, Menu, Moon, MoreHorizontal, Plus, Search, Settings, ShieldCheck, Sparkles, Sun,
   TrendingDown, TrendingUp, UserRound, Users, Wallet, X, PieChart as PieIcon, Receipt,
-  Utensils, Car, ShoppingBag, HeartPulse, Banknote, Smartphone, CircleDollarSign, Copy, Edit3, Archive, RotateCcw, ListFilter
+  Utensils, Car, ShoppingBag, HeartPulse, Banknote, Smartphone, CircleDollarSign, Copy, Edit3, Archive, RotateCcw, ListFilter,
+  CheckCircle2, Trash2, PartyPopper, AlertCircle
 } from 'lucide-react';
 import {
   Area, AreaChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip,
@@ -159,7 +160,7 @@ function PasswordRecoveryScreen(){
 function GoogleGlyph() { return <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 24.5c0-1.4-.1-2.8-.4-4.1H24v7.8h11a9.4 9.4 0 0 1-4.1 6.2v5.1h6.6c3.9-3.6 6.1-8.8 6.1-15z"/><path fill="#34A853" d="M24 44c5.5 0 10.1-1.8 13.5-4.9l-6.6-5.1c-1.8 1.2-4.1 2-6.9 2-5.3 0-9.8-3.6-11.4-8.4H5.8v5.3A20 20 0 0 0 24 44z"/><path fill="#4A90E2" d="M12.6 27.6a12 12 0 0 1 0-7.2v-5.3H5.8a20 20 0 0 0 0 17.8z"/><path fill="#EA4335" d="M24 12c3 0 5.7 1 7.8 3.1l5.8-5.8C34.1 6 29.5 4 24 4A20 20 0 0 0 5.8 15.1l6.8 5.3C14.2 15.6 18.7 12 24 12z"/></svg>; }
 
 function MainApp() {
-  const { data, theme, language, setTheme, setLanguage, demoMode, signOut, error, clearError, toggleAccountArchived } = useApp();
+  const { data, theme, language, setTheme, setLanguage, demoMode, signOut, error, clearError, toggleAccountArchived, deleteDebt } = useApp();
   const [page, setPage] = useState<Page>('dashboard');
   const [mobileMenu, setMobileMenu] = useState(false);
   const [modal, setModal] = useState<'transaction'|'account'|'contact'|'debt'|'payment'|null>(null);
@@ -171,6 +172,45 @@ function MainApp() {
   const [selectedDebt, setSelectedDebt] = useState<Debt | null>(null);
   const [search, setSearch] = useState('');
   const [toast, setToast] = useState('');
+  const [hiddenDebtIds, setHiddenDebtIds] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem('amar_hisab_hidden_debts');
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [celebrationDebt, setCelebrationDebt] = useState<Debt | null>(null);
+
+  const hideDebt = (debtId: string) => {
+    setHiddenDebtIds(prev => {
+      const next = prev.includes(debtId) ? prev : [...prev, debtId];
+      try { localStorage.setItem('amar_hisab_hidden_debts', JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
+  const unhideDebt = (debtId: string) => {
+    setHiddenDebtIds(prev => {
+      const next = prev.filter(id => id !== debtId);
+      try { localStorage.setItem('amar_hisab_hidden_debts', JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
+  const restoreAllDebts = () => {
+    setHiddenDebtIds([]);
+    try { localStorage.removeItem('amar_hisab_hidden_debts'); } catch {}
+    notify(language === 'bn' ? 'সব লুকানো রেকর্ড ফিরিয়ে আনা হয়েছে' : 'All hidden records restored');
+  };
+  const handleDeleteDebt = async (debt: Debt) => {
+    hideDebt(debt.id);
+    try {
+      await deleteDebt(debt.id);
+    } catch (e) {
+      console.warn('Backend delete debt deferred:', e);
+    }
+    notify(language === 'bn' ? '✓ কার্ডটি সফলভাবে তালিকা থেকে সরানো হয়েছে' : 'Card removed from list');
+  };
+
   const monthSummary = useMemo(() => { const current = dhakaYearMonth(); return summarizeMonth(data.transactions, current.year, current.month); }, [data.transactions]);
   const balance = totalAvailable(data.accounts, data.ledger);
   const debtSummary = debtTotals(data.debts);
@@ -203,7 +243,7 @@ function MainApp() {
         {page==='dashboard' && <Dashboard data={data} balance={balance} income={monthSummary.income} expenses={monthSummary.expenses} payable={debtSummary.payable} receivable={debtSummary.receivable} netWorth={netWorth} language={language} onNavigate={navigate} onAdd={()=>createTransaction()} onPayment={openPayment}/>}
         {page==='transactions' && <TransactionsPage data={data} language={language} search={search} onAdd={()=>createTransaction()}/>}
         {page==='accounts' && <AccountsPage data={data} language={language} onAdd={()=>{setSelectedAccount(null);setModal('account')}} onEdit={a=>{setSelectedAccount(a);setModal('account')}} onArchive={archive} onView={a=>viewTransactions(a.name)} onTransfer={a=>createTransaction('transfer',a.id)} onAddExpense={accId=>createTransaction('expense',accId)} onAddIncome={accId=>createTransaction('income',accId)}/>}
-        {page==='loans' && <LoansPage data={data} language={language} search={search} onAdd={()=>{setContactDefault('');setModal('debt')}} onPayment={openPayment}/>}
+        {page==='loans' && <LoansPage data={data} language={language} search={search} hiddenDebtIds={hiddenDebtIds} onDelete={handleDeleteDebt} onUnhide={unhideDebt} onRestoreAll={restoreAllDebts} onAdd={()=>{setContactDefault('');setModal('debt')}} onPayment={openPayment}/>}
         {page==='people' && <PeoplePage data={data} language={language} onAdd={()=>{setSelectedContact(null);setModal('contact')}} onEdit={c=>{setSelectedContact(c);setModal('contact')}} onHistory={viewTransactions} onLoans={name=>{setSearch(name);setPage('loans');setMobileMenu(false)}} onCopy={copyPhone} onNewLoan={name=>{setContactDefault(name);setModal('debt')}}/>}
         {page==='reports' && <ReportsPage data={data} language={language}/>}
         {page==='settings' && <SettingsPage data={data} language={language} theme={theme} setLanguage={setLanguage} setTheme={setTheme} signOut={signOut} demoMode={demoMode}/>}
@@ -215,8 +255,23 @@ function MainApp() {
     {modal==='account' && <AccountModal account={selectedAccount} language={language} onClose={()=>setModal(null)} onDone={notify}/>}
     {modal==='debt' && <DebtModal defaultContact={contactDefault} data={data} language={language} onClose={()=>setModal(null)} onDone={notify} onAddAccount={()=>{setSelectedAccount(null);setModal('account')}}/>}
     {modal==='contact'&&<ContactModal contact={selectedContact} language={language} onClose={()=>setModal(null)} onDone={notify}/>}
-    {modal==='payment' && selectedDebt && <PaymentModal data={data} debt={selectedDebt} language={language} onClose={()=>setModal(null)} onDone={notify}/>}
+    {modal==='payment' && selectedDebt && <PaymentModal data={data} debt={selectedDebt} language={language} onClose={()=>setModal(null)} onDone={notify} onSettled={debt=>setCelebrationDebt(debt)}/>}
     {toast && <div className="toast"><Check size={17}/>{toast}</div>}
+    {celebrationDebt && (
+      <>
+        <CelebrationConfetti onComplete={() => {}} />
+        <SettledCelebrationModal
+          debt={celebrationDebt}
+          language={language}
+          onClose={() => setCelebrationDebt(null)}
+          onRemove={() => {
+            const d = celebrationDebt;
+            setCelebrationDebt(null);
+            handleDeleteDebt(d);
+          }}
+        />
+      </>
+    )}
   </div>;
 }
 
@@ -276,16 +331,30 @@ function AccountsPage({data,language,onAdd,onEdit,onArchive,onView,onTransfer,on
   return <><SectionHeading title={t(language,'accounts')} subtitle={language==='bn'?'আপনার সকল ক্যাশ, ব্যাংক ও বিকাশ এক জায়গায়।':'All your money, organized in one place.'} action={onAdd} actionLabel={t(language,'addAccount')}/><div className="account-grid">{data.accounts.map((a:Account,i:number)=>{const value=a.balance_paisa;const Icon=a.account_type==='cash'?Banknote:a.account_type==='mobile_wallet'?Smartphone:CreditCard;return <div className={`account-card account-card-${i%3} ${a.archived_at?'is-archived':''}`} key={a.id}><div className="account-card-top"><div className="account-icon"><Icon size={21}/></div><ActionMenu label={`Actions for ${a.name}`} options={[{label:'View transactions',icon:ListFilter,onClick:()=>onView(a)},{label:'Transfer funds',icon:ArrowLeftRight,disabled:!!a.archived_at,onClick:()=>onTransfer(a)},{label:'Rename account',icon:Edit3,disabled:!!a.archived_at,onClick:()=>onEdit(a)},{label:a.archived_at?'Restore account':'Archive account',icon:a.archived_at?RotateCcw:Archive,danger:!a.archived_at,onClick:()=>onArchive(a)}]}/></div><span>{a.account_type.replace('_',' ').toUpperCase()}</span><h3>{a.name}</h3><strong>{formatMoney(value,language)}</strong><div className="account-card-bottom"><span>{language==='bn'?'বর্তমান ব্যালেন্স':'Available balance'}</span><span><Activity size={13}/>{a.archived_at?'Archived':'Active'}</span></div>{!a.archived_at&&onAddExpense&&onAddIncome&&<div style={{display:'flex',gap:8,marginTop:14}}><button type="button" className="secondary-btn small" style={{flex:1,justifyContent:'center',fontWeight:700}} onClick={(e)=>{e.stopPropagation();onAddExpense(a.id)}}>− {language==='bn'?'খরচ লিখুন':'Expense'}</button><button type="button" className="secondary-btn small" style={{flex:1,justifyContent:'center',fontWeight:700}} onClick={(e)=>{e.stopPropagation();onAddIncome(a.id)}}>+ {language==='bn'?'আয় যোগ করুন':'Income'}</button></div>}</div>})}<button className="add-account-card" onClick={onAdd}><div><Plus size={22}/></div><b>{language==='bn'?'আরেকটি অ্যাকাউন্ট যোগ করুন':'Add another account'}</b><span>{language==='bn'?'ক্যাশ, ব্যাংক বা মোবাইল ওয়ালেট (বিকাশ)':'Cash, bank or mobile wallet'}</span></button></div><div className="panel account-note"><div className="note-icon"><ShieldCheck size={19}/></div><div><b>{language==='bn'?'অ্যাকাউন্টগুলো স্বয়ংক্রিয়ভাবে সিঙ্ক থাকে':'Your accounts stay in sync'}</b><p>{language==='bn'?'নিজের এক অ্যাকাউন্ট থেকে অন্য অ্যাকাউন্টে ট্রান্সফার করলে মূল মোট ব্যালেন্স অপরিবর্তিত থাকে।':'Transfers between your own accounts move money without counting as income or expense.'}</p></div></div></>;
 }
 
-function LoansPage({data,language,search,onAdd,onPayment}:{data:any;language:Language;search:string;onAdd:()=>void;onPayment:(d:Debt)=>void}) {
-  const [tab,setTab]=useState<'all'|'i_owe'|'they_owe'>('all');
-  const filtered=(data.debts as Debt[]).filter(d=>(tab==='all'||d.direction===tab)&&(!search.trim()||`${d.contact_name} ${d.notes||''}`.toLowerCase().includes(search.trim().toLowerCase())));
+function LoansPage({data,language,search,hiddenDebtIds=[],onDelete,onUnhide,onRestoreAll,onAdd,onPayment}:{data:any;language:Language;search:string;hiddenDebtIds?:string[];onDelete?:(d:Debt)=>void;onUnhide?:(id:string)=>void;onRestoreAll?:()=>void;onAdd:()=>void;onPayment:(d:Debt)=>void}) {
+  const [tab,setTab]=useState<'active'|'settled'|'they_owe'|'i_owe'|'all'>('active');
+  const allDebts=(data.debts as Debt[]).filter(d=>!hiddenDebtIds.includes(d.id));
+  const filtered=allDebts.filter(d=>{
+    if(tab==='active'&&(d.status==='settled'||d.remaining_paisa===0))return false;
+    if(tab==='settled'&&d.status!=='settled'&&d.remaining_paisa>0)return false;
+    if(tab==='i_owe'&&d.direction!=='i_owe')return false;
+    if(tab==='they_owe'&&d.direction!=='they_owe')return false;
+    if(search.trim())return `${d.contact_name} ${d.notes||''}`.toLowerCase().includes(search.trim().toLowerCase());
+    return true;
+  });
   const totals=debtTotals(data.debts);
-  return <><SectionHeading title={t(language,'loans')} subtitle={language==='bn'?'কারো থেকে ধার নিলে বা দিলে তারিখ অনুযায়ী প্রতিটি কিস্তির হিসাব রাখুন।':'Track borrowed money, lending and every repayment.'} action={onAdd} actionLabel={t(language,'addLoan')}/><div className="debt-summary-grid"><div className="debt-summary-card owed"><span>{language==='bn'?'আপনি পাবেন (পাওনা)':'OWED TO YOU'}</span><strong>{formatMoney(totals.receivable,language)}</strong><small>{language==='bn'?'ধার দিয়েছেন, ফেরত পাবেন':'Money expected back'}</small><HandCoins size={23}/></div><div className="debt-summary-card owe"><span>{language==='bn'?'আপনার দেনা (পরিশোধ করতে হবে)':'YOU OWE'}</span><strong>{formatMoney(totals.payable,language)}</strong><small>{language==='bn'?'ধার নিয়েছেন, শোধ করবেন':'Your outstanding repayments'}</small><CreditCard size={23}/></div></div><div className="filter-toolbar"><div className="filter-tabs">{[{id:'all',label:language==='bn'?'সব ধার-দেনা':'All records'},{id:'they_owe',label:language==='bn'?'আমার পাওনা':'Owed to me'},{id:'i_owe',label:language==='bn'?'আমার দেনা':'I owe'}].map((x:any)=><button key={x.id} className={tab===x.id?'selected':''} onClick={()=>setTab(x.id)}>{x.label}</button>)}</div><span className="result-count">{filtered.length} {language==='bn'?'টি রেকর্ড':'records'}</span></div><div className="debt-grid">{filtered.map(debt=><DebtCard key={debt.id} debt={debt} payments={data.payments.filter((p:any)=>p.debt_id===debt.id)} language={language} onPayment={()=>onPayment(debt)}/>)}</div>{!filtered.length&&<div className="panel empty-panel"><EmptyState text={language==='bn'?'এখনও কোনো ঋণের হিসাব নেই। উপরে "ঋণ / পাওনা যোগ করুন" বাটনে ক্লিক করে শুরু করুন।':'No loan records yet. Add a loan or a receivable to get started.'}/></div>}</>;
+  const activeCount=allDebts.filter(d=>d.remaining_paisa>0).length;
+  const settledCount=allDebts.filter(d=>d.status==='settled'||d.remaining_paisa===0).length;
+
+  return <><SectionHeading title={t(language,'loans')} subtitle={language==='bn'?'কারো থেকে ধার নিলে বা দিলে তারিখ অনুযায়ী প্রতিটি কিস্তির হিসাব রাখুন।':'Track borrowed money, lending and every repayment.'} action={onAdd} actionLabel={t(language,'addLoan')}/><div className="debt-summary-grid"><div className="debt-summary-card owed"><span>{language==='bn'?'আপনি পাবেন (পাওনা)':'OWED TO YOU'}</span><strong>{formatMoney(totals.receivable,language)}</strong><small>{language==='bn'?'ধার দিয়েছেন, ফেরত পাবেন':'Money expected back'}</small><HandCoins size={23}/></div><div className="debt-summary-card owe"><span>{language==='bn'?'আপনার দেনা (পরিশোধ করতে হবে)':'YOU OWE'}</span><strong>{formatMoney(totals.payable,language)}</strong><small>{language==='bn'?'ধার নিয়েছেন, শোধ করবেন':'Your outstanding repayments'}</small><CreditCard size={23}/></div></div><div className="filter-toolbar"><div className="filter-tabs">{[{id:'active',label:language==='bn'?`চলমান দেনা-পাওনা (${activeCount})`:`Active (${activeCount})`},{id:'settled',label:language==='bn'?`পরিশোধিত / ক্লিয়ার (${settledCount})`:`Settled (${settledCount})`},{id:'they_owe',label:language==='bn'?'আমার পাওনা':'Owed to me'},{id:'i_owe',label:language==='bn'?'আমার দেনা':'I owe'},{id:'all',label:language==='bn'?'সব রেকর্ড':'All'}].map((x:any)=><button key={x.id} className={tab===x.id?'selected':''} onClick={()=>setTab(x.id)}>{x.label}</button>)}</div><span className="result-count">{filtered.length} {language==='bn'?'টি রেকর্ড':'records'}</span></div><div className="debt-grid">{filtered.map(debt=><DebtCard key={debt.id} debt={debt} payments={data.payments.filter((p:any)=>p.debt_id===debt.id)} language={language} onPayment={()=>onPayment(debt)} onDelete={()=>onDelete?.(debt)}/>)}</div>{!filtered.length&&<div className="panel empty-panel"><EmptyState text={tab==='settled'?(language==='bn'?'কোনো পরিশোধিত ঋণ পাওয়া যায়নি।':'No settled loans found.'):tab==='active'?(language==='bn'?'🎉 চমৎকার! কোনো বাকি দেনা বা পাওনা নেই। সব হিসাব ক্লিয়ার!':'All caught up! No active debts or dues.'):(language==='bn'?'এখনও কোনো ঋণের হিসাব নেই। উপরে "ঋণ / পাওনা যোগ করুন" বাটনে ক্লিক করে শুরু করুন।':'No loan records yet. Add a loan or a receivable to get started.')}/></div>}{hiddenDebtIds.length>0&&onRestoreAll&&<div className="hidden-debts-bar"><span>💡 {language==='bn'?`আপনি ${hiddenDebtIds.length} টি পরিশোধিত/পুরনো কার্ড সরিয়ে রেখেছেন`:`You have ${hiddenDebtIds.length} hidden loan records`}</span><button type="button" className="restore-btn" onClick={onRestoreAll}><RotateCcw size={12}/> {language==='bn'?'সব কার্ড ফিরিয়ে আনুন':'Restore all'}</button></div>}</>;
 }
 
-function DebtCard({debt,payments,language,onPayment}:{debt:Debt;payments:any[];language:Language;onPayment:()=>void}) {
+function DebtCard({debt,payments,language,onPayment,onDelete}:{debt:Debt;payments:any[];language:Language;onPayment:()=>void;onDelete?:()=>void}) {
   const progress=paymentProgress(debt);
-  return <div className="panel debt-card"><div className="debt-card-top"><div className="person-avatar">{debt.contact_name.slice(0,1)}</div><div className="debt-person"><b>{debt.contact_name}</b><span>{debt.direction==='i_owe'?(language==='bn'?'আপনি ধার নিয়েছেন (দেনা)':'You borrowed'):(language==='bn'?'আপনি ধার দিয়েছেন (পাওনা)':'You lent')}</span></div><span className={`status-pill ${debt.status}`}>{debt.status==='settled'?(language==='bn'?'সম্পূর্ণ পরিশোধিত ✓':t(language,'settled')):debt.status==='overdue'?t(language,'overdue'):debt.status==='partial'?(language==='bn'?'আংশিক পরিশোধ':t(language,'partial')):(language==='bn'?'বাকি আছে':t(language,'pending'))}</span></div><div className="debt-amounts"><div><span>{language==='bn'?'মূল ঋণের পরিমাণ':'ORIGINAL AMOUNT'}</span><b>{formatMoney(debt.principal_paisa,language)}</b></div><div><span>{language==='bn'?'বাকি দেনা':'REMAINING'}</span><b className="debt-remaining">{formatMoney(debt.remaining_paisa,language)}</b></div></div><div className="progress-label"><span>{formatMoney(debt.paid_paisa,language)} {language==='bn'?'পরিশোধ হয়েছে':'paid'}</span><b>{Math.round(progress)}%</b></div><div className="progress-track"><i style={{width:`${progress}%`}}/></div>{payments.length>0?<div className="debt-payment-history"><span>{language==='bn'?'কিস্তি ও পরিশোধের তালিকা:':'PAYMENT HISTORY:'}</span>{payments.map((p:any)=><div key={p.id}><span>📅 {new Date(p.paid_at).toLocaleDateString(language==='bn'?'bn-BD':'en-GB',{day:'2-digit',month:'short',year:'numeric'})}{p.note?` (${p.note})`:''}</span><b>− {formatMoney(p.amount_paisa,language)}</b></div>)}</div>:<div className="debt-payment-history" style={{paddingTop:6}}><span style={{fontSize:'11px',color:'var(--muted)'}}>{language==='bn'?'এখনও কোনো কিস্তি পরিশোধ করা হয়নি':'No repayments recorded yet'}</span></div>}<div className="debt-card-bottom" style={{marginTop:12}}><span><CalendarDays size={13}/> {debt.due_date?new Date(`${debt.due_date?.slice(0,10)}T12:00:00+06:00`).toLocaleDateString(language==='bn'?'bn-BD':'en-GB'):language==='bn'?'কোনো নির্দিষ্ট তারিখ নেই':'No due date'}</span><button className="primary-btn small" disabled={debt.status==='settled'} onClick={onPayment}><Plus size={14}/>{debt.direction==='i_owe'?(language==='bn'?'টাকা / কিস্তি পরিশোধ করুন':'Repay'):(language==='bn'?'টাকা গ্রহণ করুন':'Add payment')}</button></div></div>;
+  const isSettled=debt.status==='settled'||debt.remaining_paisa===0;
+  const isDueOwing=debt.direction==='i_owe'&&debt.remaining_paisa>0;
+
+  return <div className={`panel debt-card ${isSettled?'debt-settled':''} ${isDueOwing?'debt-due-owing':''}`}>{isSettled&&<div className="settled-banner"><span style={{display:'flex',alignItems:'center',gap:'6px'}}><CheckCircle2 size={15} color="#10b981"/>{language==='bn'?'সম্পূর্ণ পরিশোধিত · হিসাব ক্লিয়ার!':'Fully Settled · Balance Cleared!'}</span><span className="status-pill settled">{language==='bn'?'✓ ক্লিয়ার':'✓ Settled'}</span></div>}<div className="debt-card-top"><div className="person-avatar">{debt.contact_name.slice(0,1)}</div><div className="debt-person"><b>{debt.contact_name}</b><span>{debt.direction==='i_owe'?(language==='bn'?'আপনি ধার নিয়েছেন (দেনা)':'You borrowed'):(language==='bn'?'আপনি ধার দিয়েছেন (পাওনা)':'You lent')}</span>{isDueOwing&&<div className="due-warning-tag"><AlertCircle size={11}/> {language==='bn'?'বাকি দেনা · পরিশোধ করতে হবে':'Outstanding due'}</div>}</div>{!isSettled&&<span className={`status-pill ${debt.status}`}>{debt.status==='overdue'?t(language,'overdue'):debt.status==='partial'?(language==='bn'?'আংশিক পরিশোধ':t(language,'partial')):(language==='bn'?'বাকি আছে':t(language,'pending'))}</span>}</div><div className="debt-amounts"><div><span>{language==='bn'?'মূল ঋণের পরিমাণ':'ORIGINAL AMOUNT'}</span><b>{formatMoney(debt.principal_paisa,language)}</b></div><div><span>{language==='bn'?'বাকি দেনা':'REMAINING'}</span><b className={`debt-remaining ${isSettled?'settled-green':'due-red'}`}>{isSettled?(language==='bn'?'✓ ৳ ০ (পরিশোধিত)':'✓ BDT 0 (Settled)'):formatMoney(debt.remaining_paisa,language)}</b></div></div><div className="progress-label"><span>{formatMoney(debt.paid_paisa,language)} {language==='bn'?'পরিশোধ হয়েছে':'paid'}</span><b>{Math.round(progress)}%</b></div><div className={`progress-track ${isSettled?'settled':''}`}><i style={{width:`${progress}%`}}/></div>{payments.length>0?<div className="debt-payment-history"><span>{language==='bn'?'কিস্তি ও পরিশোধের তালিকা:':'PAYMENT HISTORY:'}</span>{payments.map((p:any)=><div key={p.id}><span>📅 {new Date(p.paid_at).toLocaleDateString(language==='bn'?'bn-BD':'en-GB',{day:'2-digit',month:'short',year:'numeric'})}{p.note?` (${p.note})`:''}</span><b>− {formatMoney(p.amount_paisa,language)}</b></div>)}</div>:<div className="debt-payment-history" style={{paddingTop:6}}><span style={{fontSize:'11px',color:'var(--muted)'}}>{language==='bn'?'এখনও কোনো কিস্তি পরিশোধ করা হয়নি':'No repayments recorded yet'}</span></div>}<div className="debt-card-bottom" style={{marginTop:12}}><span><CalendarDays size={13}/> {debt.due_date?new Date(`${debt.due_date?.slice(0,10)}T12:00:00+06:00`).toLocaleDateString(language==='bn'?'bn-BD':'en-GB'):language==='bn'?'কোনো নির্দিষ্ট তারিখ নেই':'No due date'}</span>{isSettled?<button type="button" className="secondary-btn small delete-debt-btn" onClick={onDelete} title={language==='bn'?'কার্ডটি সরান':'Remove card'}><Trash2 size={14}/> {language==='bn'?'কার্ডটি সরান':'Remove card'}</button>:<button className="primary-btn small" onClick={onPayment}><Plus size={14}/>{debt.direction==='i_owe'?(language==='bn'?'টাকা / কিস্তি পরিশোধ করুন':'Repay'):(language==='bn'?'টাকা গ্রহণ করুন':'Add payment')}</button>}</div></div>;
 }
 
 function PeoplePage({data,language,onAdd,onEdit,onHistory,onLoans,onCopy,onNewLoan}:{data:any;language:Language;onAdd:()=>void;onEdit:(c:Contact)=>void;onHistory:(name:string)=>void;onLoans:(name:string)=>void;onCopy:(phone:string)=>void;onNewLoan:(name:string)=>void}){
@@ -339,10 +408,131 @@ function DebtModal({data,language,defaultContact,onClose,onDone,onAddAccount}:{d
   return <Modal title={t(language,'addLoan')} subtitle={language==='bn'?'ধার নেওয়া বা দেওয়ার হিসাব সংরক্ষণ করুন।':'Keep the original amount and due date on record.'} onClose={onClose}><form className="form-stack" onSubmit={submit}><div className="segmented-control"><button type="button" className={direction==='they_owe'?'selected income-selected':''} onClick={()=>setDirection('they_owe')}><ArrowDownLeft size={16}/> {language==='bn'?'আমি দিয়েছি (পাওনা - ফেরত পাব)':'They owe me'}</button><button type="button" className={direction==='i_owe'?'selected expense-selected':''} onClick={()=>setDirection('i_owe')}><ArrowUpRight size={16}/> {language==='bn'?'আমি নিয়েছি (দেনা - শোধ করব)':'I borrowed'}</button></div><label>{language==='bn'?'ব্যক্তির নাম':'Person name'}<input required value={contactName} onChange={e=>setContactName(e.target.value)} placeholder={language==='bn'?'কার সাথে লেনদেন? (যেমন: রহিম ভাই)':'Full name'}/></label><label>{language==='bn'?'ফোন নম্বর':'Phone'} <span className="optional">{language==='bn'?'ঐচ্ছিক':'Optional'}</span><input value={phone} onChange={e=>setPhone(e.target.value)} placeholder="01XXXXXXXXX"/></label><label>{language==='bn'?'টাকার পরিমাণ (৳)':'Amount (৳)'}<input required type="number" min="0.01" step="0.01" value={amount} onChange={e=>setAmount(e.target.value)} placeholder="0.00"/></label><label>{language==='bn'?(direction==='i_owe'?'যে অ্যাকাউন্টে টাকা জমা হবে (ঐচ্ছিক)':'যে অ্যাকাউন্ট থেকে টাকা দিয়েছেন (ঐচ্ছিক)'):'Account (Optional)'} <span className="optional">{language==='bn'?'ঐচ্ছিক':'Optional'}</span><select value={accountId} onChange={e=>setAccountId(e.target.value)} style={{cursor:'pointer'}}><option value="">{language==='bn'?'অ্যাকাউন্ট ছাড়া / ঐচ্ছিক (হাতে হাতে লেনদেন)':'No account / Optional (Cash in hand)'}</option>{data.accounts.filter((a:Account)=>!a.archived_at).map((a:Account)=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label>{accountId?(<div style={{fontSize:'12px',color:'#554fe0',background:'#f0eeff',padding:'6px 10px',borderRadius:'8px',marginTop:'-4px',marginBottom:'4px',display:'flex',alignItems:'center',gap:'6px'}}><Check size={14}/><span>{language==='bn'?`বাছাইকৃত অ্যাকাউন্ট: ${data.accounts.find((a:Account)=>a.id===accountId)?.name}`:`Selected: ${data.accounts.find((a:Account)=>a.id===accountId)?.name}`}</span></div>):(<div style={{fontSize:'12px',color:'var(--muted)',background:'var(--panel-soft)',padding:'6px 10px',borderRadius:'8px',marginTop:'-4px',marginBottom:'4px',display:'flex',alignItems:'center',gap:'6px'}}><span>💡 {language==='bn'?'অ্যাকাউন্ট বাছাই না করলেও চলবে, হিসাব স্বয়ংক্রিয়ভাবে সংরক্ষিত হবে।':'Account is optional — this will be saved smoothly.'}</span></div>)}<div className="form-two"><label>{language==='bn'?'লেনদেনের তারিখ':'Start date'}<input type="date" required value={date.slice(0,10)} onChange={e=>setDate(`${e.target.value}T12:00`)}/></label><label>{language==='bn'?'পরিশোধের শেষ তারিখ':'Due date'} <span className="optional">{language==='bn'?'ঐচ্ছিক':'Optional'}</span><input type="date" value={dueDate} onChange={e=>setDueDate(e.target.value)}/></label></div><label>{language==='bn'?'নোট':'Notes'} <span className="optional">{language==='bn'?'ঐচ্ছিক':'Optional'}</span><textarea rows={2} value={notes} onChange={e=>setNotes(e.target.value)} placeholder={language==='bn'?'চুক্তি বা কারণ (ঐচ্ছিক)…':'Reason or agreement details'}/></label>{!data.accounts.length&&<div className="inline-message" style={{display:'flex',flexDirection:'column',gap:8}}><span>{language==='bn'?'💡 আপনার কোনো অ্যাকাউন্ট যোগ করা নেই। আপনি চাইলে অ্যাকাউন্ট ছাড়াই সরাসরি হিসাব রাখতে পারেন, অথবা অ্যাকাউন্ট যোগ করে নিতে পারেন।':'💡 You can record loans without an account, or add one below.'}</span>{onAddAccount&&<button type="button" className="secondary-btn small" onClick={onAddAccount}>+ {language==='bn'?'অ্যাকাউন্ট যোগ করুন (ক্যাশ/বিকাশ)':'Add account'}</button>}</div>}{err&&<div className="inline-message error">{err}</div>}<div className="modal-actions"><button type="button" className="secondary-btn" onClick={onClose}>{t(language,'cancel')}</button><button className="primary-btn" disabled={busy}>{busy?'Saving…':(language==='bn'?'সংরক্ষণ করুন':'Save')} <Check size={16}/></button></div></form></Modal>;
 }
 
-function PaymentModal({data,debt,language,onClose,onDone}:{data:any;debt:Debt;language:Language;onClose:()=>void;onDone:(m:string)=>void}) {
+function PaymentModal({data,debt,language,onClose,onDone,onSettled}:{data:any;debt:Debt;language:Language;onClose:()=>void;onDone:(m:string)=>void;onSettled?:(debt:Debt)=>void}) {
   const {recordPayment}=useApp();const [idempotencyKey] = useState(() => crypto.randomUUID());const [amount,setAmount]=useState('');const [accountId,setAccountId]=useState(data.accounts[0]?.id||'');const [date,setDate]=useState(dhakaInputNow());const [note,setNote]=useState('');const [busy,setBusy]=useState(false);const [err,setErr]=useState('');
-  const submit=async(e:React.FormEvent)=>{e.preventDefault();setBusy(true);try{await recordPayment({debtId:debt.id,accountId,amount:Number(amount),date,note,idempotencyKey});const full=Math.round(Number(amount)*100)===debt.remaining_paisa;onDone(full?(language==='bn'?'অভিনন্দন! সম্পূর্ণ টাকা পরিশোধ হয়েছে 🎉':'Fully settled — congratulations! 🎉'):(language==='bn'?'পেমেন্ট সফলভাবে যোগ হয়েছে':'Payment recorded'));onClose()}catch(e){setErr(e instanceof Error?e.message:'Could not record payment')}finally{setBusy(false)}};
-  return <Modal title={language==='bn'?'টাকা / কিস্তি পরিশোধ':'Record a payment'} subtitle={`${debt.contact_name} · ${language==='bn'?'বাকি আছে':'Remaining'} ${formatMoney(debt.remaining_paisa,language)}`} onClose={onClose}><form className="form-stack" onSubmit={submit}><div className="payment-callout"><div><span>{language==='bn'?'বাকি টাকা':'REMAINING BALANCE'}</span><b>{formatMoney(debt.remaining_paisa,language)}</b></div><div className="payment-callout-icon"><HandCoins size={22}/></div></div><label>{language==='bn'?'আজ কত টাকা পরিশোধ করছেন? (৳)':'Payment amount (৳)'}<input required type="number" min="0.01" max={(debt.remaining_paisa/100).toFixed(2)} step="0.01" value={amount} onChange={e=>setAmount(e.target.value)} placeholder="0.00" autoFocus/></label><label>{language==='bn'?(debt.direction==='i_owe'?'টাকা প্রদানের অ্যাকাউন্ট (ঐচ্ছিক)':'টাকা জমার অ্যাকাউন্ট (ঐচ্ছিক)'):'Account (Optional)'} <span className="optional">{language==='bn'?'ঐচ্ছিক':'Optional'}</span><select value={accountId} onChange={e=>setAccountId(e.target.value)} style={{cursor:'pointer'}}><option value="">{language==='bn'?(data.accounts.length?`স্বয়ংক্রিয় (${data.accounts[0]?.name})`:'স্বয়ংক্রিয় অ্যাকাউন্ট'):'Auto / Default'}</option>{data.accounts.filter((a:Account)=>!a.archived_at).map((a:Account)=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label><label>{language==='bn'?'পরিশোধের তারিখ ও সময়':'Payment date'}<input type="datetime-local" required value={date} onChange={e=>setDate(e.target.value)}/></label><label>{language==='bn'?'নোট বা রেফারেন্স (ঐচ্ছিক)':'Note'} <span className="optional">{language==='bn'?'ঐচ্ছিক':'Optional'}</span><textarea rows={2} value={note} onChange={e=>setNote(e.target.value)} placeholder={language==='bn'?'যেমন: ১ম কিস্তি বা বিশেষ নোট…':'Payment reference…'}/></label>{err&&<div className="inline-message error">{err}</div>}<div className="modal-actions"><button type="button" className="secondary-btn" onClick={onClose}>{t(language,'cancel')}</button><button className="primary-btn" disabled={busy}>{busy?'Saving…':(language==='bn'?'পরিশোধ নিশ্চিত করুন':'Save payment')} <Check size={16}/></button></div></form></Modal>;
+  const submit=async(e:React.FormEvent)=>{e.preventDefault();setBusy(true);try{const paymentPaisa=Math.round(Number(amount)*100);await recordPayment({debtId:debt.id,accountId,amount:Number(amount),date,note,idempotencyKey});const full=paymentPaisa>=debt.remaining_paisa;if(full){onDone(language==='bn'?'অভিনন্দন! সম্পূর্ণ টাকা পরিশোধ হয়েছে 🎉':'Fully settled — congratulations! 🎉');onSettled?.(debt);}else{onDone(language==='bn'?'পেমেন্ট সফলভাবে যোগ হয়েছে':'Payment recorded');}onClose()}catch(e){setErr(e instanceof Error?e.message:'Could not record payment')}finally{setBusy(false)}};
+  return <Modal title={language==='bn'?'টাকা / কিস্তি পরিশোধ':'Record a payment'} subtitle={`${debt.contact_name} · ${language==='bn'?'বাকি আছে':'Remaining'} ${formatMoney(debt.remaining_paisa,language)}`} onClose={onClose}><form className="form-stack" onSubmit={submit}><div className="payment-callout"><div><span>{language==='bn'?'বাকি টাকা':'REMAINING BALANCE'}</span><b style={{color:'#dc2626'}}>{formatMoney(debt.remaining_paisa,language)}</b></div><div className="payment-callout-icon"><HandCoins size={22}/></div></div><label>{language==='bn'?'আজ কত টাকা পরিশোধ করছেন? (৳)':'Payment amount (৳)'}<input required type="number" min="0.01" max={(debt.remaining_paisa/100).toFixed(2)} step="0.01" value={amount} onChange={e=>setAmount(e.target.value)} placeholder="0.00" autoFocus/></label><label>{language==='bn'?(debt.direction==='i_owe'?'টাকা প্রদানের অ্যাকাউন্ট (ঐচ্ছিক)':'টাকা জমার অ্যাকাউন্ট (ঐচ্ছিক)'):'Account (Optional)'} <span className="optional">{language==='bn'?'ঐচ্ছিক':'Optional'}</span><select value={accountId} onChange={e=>setAccountId(e.target.value)} style={{cursor:'pointer'}}><option value="">{language==='bn'?(data.accounts.length?`স্বয়ংক্রিয় (${data.accounts[0]?.name})`:'স্বয়ংক্রিয় অ্যাকাউন্ট'):'Auto / Default'}</option>{data.accounts.filter((a:Account)=>!a.archived_at).map((a:Account)=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label><label>{language==='bn'?'পরিশোধের তারিখ ও সময়':'Payment date'}<input type="datetime-local" required value={date} onChange={e=>setDate(e.target.value)}/></label><label>{language==='bn'?'নোট বা রেফারেন্স (ঐচ্ছিক)':'Note'} <span className="optional">{language==='bn'?'ঐচ্ছিক':'Optional'}</span><textarea rows={2} value={note} onChange={e=>setNote(e.target.value)} placeholder={language==='bn'?'যেমন: ১ম কিস্তি বা বিশেষ নোট…':'Payment reference…'}/></label>{err&&<div className="inline-message error">{err}</div>}<div className="modal-actions"><button type="button" className="secondary-btn" onClick={onClose}>{t(language,'cancel')}</button><button className="primary-btn" disabled={busy}>{busy?'Saving…':(language==='bn'?'পরিশোধ নিশ্চিত করুন':'Save payment')} <Check size={16}/></button></div></form></Modal>;
+}
+
+function CelebrationConfetti({onComplete}:{onComplete?:()=>void}) {
+  const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    let width = (canvas.width = window.innerWidth);
+    let height = (canvas.height = window.innerHeight);
+    const onResize = () => {
+      if (!canvas) return;
+      width = canvas.width = window.innerWidth;
+      height = canvas.height = window.innerHeight;
+    };
+    window.addEventListener('resize', onResize);
+    const colors = ['#10b981', '#059669', '#34d399', '#6366f1', '#ec4899', '#f59e0b', '#3b82f6', '#8b5cf6', '#14b8a6'];
+    const particles: Array<{
+      x: number; y: number; vx: number; vy: number; w: number; h: number;
+      rotation: number; rotationSpeed: number; color: string; shape: 'rect'|'circle'; opacity: number;
+    }> = [];
+    const total = 95;
+    for (let i = 0; i < total; i++) {
+      particles.push({
+        x: width * 0.5 + (Math.random() - 0.5) * 220,
+        y: height * 0.38 + (Math.random() - 0.5) * 120,
+        vx: (Math.random() - 0.5) * 16,
+        vy: -Math.random() * 14 - 4,
+        w: Math.random() * 9 + 6,
+        h: Math.random() * 12 + 8,
+        rotation: Math.random() * Math.PI * 2,
+        rotationSpeed: (Math.random() - 0.5) * 0.25,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        shape: Math.random() > 0.3 ? 'rect' : 'circle',
+        opacity: 1
+      });
+    }
+    let animationId: number;
+    const startTime = Date.now();
+    const render = () => {
+      ctx.clearRect(0, 0, width, height);
+      const elapsed = Date.now() - startTime;
+      for (const p of particles) {
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vy += 0.35;
+        p.vx *= 0.985;
+        p.rotation += p.rotationSpeed;
+        if (elapsed > 2500) {
+          p.opacity = Math.max(0, p.opacity - 0.015);
+        }
+        ctx.save();
+        ctx.globalAlpha = p.opacity;
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rotation);
+        ctx.fillStyle = p.color;
+        if (p.shape === 'rect') {
+          ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+        } else {
+          ctx.beginPath();
+          ctx.arc(0, 0, p.w / 2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+      if (elapsed < 4500) {
+        animationId = requestAnimationFrame(render);
+      } else {
+        onComplete?.();
+      }
+    };
+    animationId = requestAnimationFrame(render);
+    return () => {
+      cancelAnimationFrame(animationId);
+      window.removeEventListener('resize', onResize);
+    };
+  }, [onComplete]);
+  return <canvas ref={canvasRef} className="celebration-canvas" />;
+}
+
+function SettledCelebrationModal({debt,language,onClose,onRemove}:{debt:Debt;language:Language;onClose:()=>void;onRemove:()=>void}) {
+  return (
+    <div className="celebration-backdrop" onClick={e=>{if(e.target===e.currentTarget)onClose()}}>
+      <div className="celebration-modal-card">
+        <div className="celebration-badge-pulse">
+          <PartyPopper size={36}/>
+        </div>
+        <h2 className="celebration-title">
+          {language==='bn'?'🎉 অভিনন্দন! দেনা সম্পূর্ণ পরিশোধিত!':'🎉 Congratulations! Loan Settled!'}
+        </h2>
+        <p className="celebration-subtitle">
+          {language==='bn'
+            ?'আলহামদুলিল্লাহ! এই হিসাবটি ১০০% পরিশোধ হয়ে ক্লিয়ার হয়েছে। দেনামুক্ত থাকা বড় প্রশান্তির।'
+            :'This loan balance is now zero. You can remove the completed card or keep it in history.'}
+        </p>
+        <div className="celebration-details">
+          <div className="celebration-details-row">
+            <span>{language==='bn'?'ব্যক্তির নাম':'Person'}</span>
+            <b>{debt.contact_name}</b>
+          </div>
+          <div className="celebration-details-row">
+            <span>{language==='bn'?'মূল ঋণের পরিমাণ':'Original amount'}</span>
+            <b>{formatMoney(debt.principal_paisa,language)}</b>
+          </div>
+          <div className="celebration-details-row">
+            <span>{language==='bn'?'বর্তমান অবস্থা':'Current status'}</span>
+            <b style={{color:'#059669'}}>✓ {language==='bn'?'৳ ০ (সম্পূর্ণ ক্লিয়ার)':'BDT 0 (100% Settled)'}</b>
+          </div>
+        </div>
+        <div className="celebration-actions">
+          <button type="button" className="celebration-remove-btn" onClick={onRemove}>
+            <Trash2 size={16}/> {language==='bn'?'তালিকা থেকে কার্ডটি সরান':'Remove card from list'}
+          </button>
+          <button type="button" className="celebration-done-btn" onClick={onClose}>
+            <CheckCircle2 size={16}/> {language==='bn'?'পরিশোধিত তালিকায় রাখুন':'Keep in settled list'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function Modal({title,subtitle,onClose,children}:{title:string;subtitle?:string;onClose:()=>void;children:React.ReactNode}) {
